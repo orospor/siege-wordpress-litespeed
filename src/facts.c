@@ -23,8 +23,15 @@ new_facts(int id, char *file)
   FACTS this;
 
   this = calloc(1,  FACTSSIZE);
+  if (this == NULL) {
+    return NULL;
+  }
   this->id  = id;
   this->jar = new_cookies();
+  if (this->jar == NULL) {
+    free(this);
+    return NULL;
+  }
   __load_cookies(this, file); 
   return this;
 }

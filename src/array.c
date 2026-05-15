@@ -26,6 +26,7 @@
 #include <limits.h>
 #include <array.h>
 #include <memory.h>
+#include <notify.h>
 #include <setup.h>
 
 typedef void *array;
@@ -102,11 +103,15 @@ void
 array_npush(ARRAY this, void *thing, size_t len) 
 {
   array arr;
-  if (thing==NULL) return;
+  if (this==NULL || thing==NULL) return;
   if (this->data == NULL && this->length == 0) {
     this->data = xmalloc(sizeof(array));
   } else {
-    this->data = realloc(this->data,(this->length+1)*sizeof(array)); 
+    array *tmp = realloc(this->data,(this->length+1)*sizeof(array));
+    if (tmp == NULL) {
+      NOTIFY(FATAL, "array_npush: unable to allocate additional memory");
+    }
+    this->data = tmp;
   }
   arr = xmalloc(len+1); 
   memset(arr, '\0', len+1);
@@ -119,7 +124,7 @@ array_npush(ARRAY this, void *thing, size_t len)
 void *
 array_get(ARRAY this, int index)
 {
-  if (index > this->length) return NULL;
+  if (this == NULL || index < 0 || index >= this->length) return NULL;
 
   return this->data[index];
 }
@@ -231,5 +236,3 @@ for (i = 0; i < 1000000; i++) {
   return 0;
 }
 #endif
-
-

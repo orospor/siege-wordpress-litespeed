@@ -359,6 +359,9 @@ parse_cmdline(int argc, char *argv[])
   nargs = argc - optind;
   if (nargs)
     my.url = xstrdup(argv[argc-1]); 
+  if (my.wp_litespeed == TRUE && my.wp_search == NULL && my.url != NULL) {
+    my.wp_search = xstrdup(my.url);
+  }
   if (my.get && my.url==NULL) {
     puts("ERROR: -g/--get requires a commandline URL");
     exit(1);

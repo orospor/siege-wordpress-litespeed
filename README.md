@@ -157,6 +157,11 @@ requests:
         --user-agent-file=/Users/gurujee/Documents/backups/useragents.txt \
         --user-agent-mode=round-robin
 
+When `--wp-litespeed-owasp` is used with a positional URL and without
+`--wp-search`, the positional URL is also used as the WordPress search base:
+
+  siege https://example.com/ --wp-litespeed-owasp
+
 Generate numbered cache-bypass variants for each request target:
 
   siege --nocache=3 https://example.com/

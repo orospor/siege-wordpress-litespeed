@@ -131,8 +131,14 @@ new_browser(int id, char *file)
   BROWSER this;
 
   this = calloc(BROWSERSIZE,1);
+  if (this == NULL) {
+    NOTIFY(FATAL, "unable to allocate memory for browser");
+  }
   this->id        = id;
   this->facts     = new_facts(this->id, file);
+  if (this->facts == NULL) {
+    NOTIFY(FATAL, "unable to allocate memory for browser facts");
+  }
   this->total     = 0.0;
   this->available = 0.0;
   this->count     = 0.0;
@@ -144,6 +150,9 @@ new_browser(int id, char *file)
   this->bytes     = 0.0;
   this->urls      = NULL;
   this->parts     = new_array();
+  if (this->parts == NULL) {
+    NOTIFY(FATAL, "unable to allocate memory for browser parts");
+  }
   this->rseed     = urandom();
   generate_uuid(this->uuid, this->id);
   return this;
