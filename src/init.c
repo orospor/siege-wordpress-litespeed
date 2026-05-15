@@ -105,6 +105,8 @@ init_config(void)
   my.internet       = FALSE;
   my.config         = FALSE;
   my.autotune       = FALSE;
+  my.crash_guard    = FALSE;
+  my.core_dumps     = TRUE;
   my.csv            = FALSE;
   my.fullurl        = FALSE;
   my.escape         = TRUE;
@@ -222,6 +224,8 @@ show_config(int EXIT)
   printf("quiet:                          %s\n", my.quiet    ? "true"     : "false");
   printf("debug:                          %s\n", my.debug    ? "true"     : "false");
   printf("auto tune:                      %s\n", my.autotune ? "true"     : "false");
+  printf("crash guard:                    %s\n", my.crash_guard ? "true"  : "false");
+  printf("core dumps:                     %s\n", my.core_dumps ? "true"   : "false");
   printf("protocol:                       %s\n", my.protocol ? "HTTP/1.1" : "HTTP/1.0");
   printf("HTML parser:                    %s\n", my.parser   ? "enabled"  : "disabled");
   printf("get method:                     %s\n", method);
@@ -420,6 +424,18 @@ load_conf(char *filename)
         my.autotune = TRUE;
       else
         my.autotune = FALSE;
+    }
+    else if (strmatch(option, "crash-guard")) {
+      if (!strncasecmp(value, "true", 4))
+        my.crash_guard = TRUE;
+      else
+        my.crash_guard = FALSE;
+    }
+    else if (strmatch(option, "core-dumps")) {
+      if (!strncasecmp(value, "false", 5) || !strncasecmp(value, "off", 3))
+        my.core_dumps = FALSE;
+      else
+        my.core_dumps = TRUE;
     }
     else if (strmatch(option, "parser")) {
       if (!strncasecmp(value, "true", 4))

@@ -474,6 +474,17 @@ benchmark = false
 # auto-tune = false
 
 #
+# Crash guard: when true, Siege disables core dump files and catches fatal
+# signals such as SIGSEGV/SIGABRT with a short diagnostic instead of leaving
+# a large core file. auto-tune enables this automatically.
+#
+# ex: crash-guard = true
+# ex: core-dumps = false
+#
+# crash-guard = false
+# core-dumps = true
+
+#
 # WordPress / LiteSpeed regression helpers. wp-search generates requests
 # against the WordPress search endpoint: URL?s=<term>. wp-search-terms points
 # at a one-term-per-line file. wp-litespeed-owasp adds a small built-in set of

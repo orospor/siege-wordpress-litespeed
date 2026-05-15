@@ -166,6 +166,8 @@ struct CONFIG
   BOOLEAN display;       /* boolean, display the thread id verbose  */
   BOOLEAN config;        /* boolean, prints the configuration       */
   BOOLEAN autotune;      /* boolean, tune runtime params to machine */
+  BOOLEAN crash_guard;   /* boolean, friendly fatal signal handling */
+  BOOLEAN core_dumps;    /* boolean, allow core dump files          */
   BOOLEAN color;         /* boolean, true for color, false for not  */
   int     cusers;        /* default concurrent users value.         */
   BOOLEAN cusers_set;    /* boolean, command line set cusers.       */

@@ -97,6 +97,8 @@ static struct option long_options[] =
   { "autotune",     no_argument,       NULL, 1006 },
   { "thread-stack", required_argument, NULL, 1007 },
   { "limit",        required_argument, NULL, 1008 },
+  { "crash-guard",  no_argument,       NULL, 1009 },
+  { "no-core-dump", no_argument,       NULL, 1010 },
   {0, 0, 0, 0}
 };
 
@@ -181,6 +183,8 @@ display_help()
   puts("      --auto-tune           Optimize concurrency and generated URLs here");
   puts("      --thread-stack=KB     Worker thread stack size for high concurrency");
   puts("      --limit=NUM           Raise/lower the configured thread cap");
+  puts("      --crash-guard         Print controlled fatal-signal diagnostics");
+  puts("      --no-core-dump        Disable writing core dump files");
   puts("      --no-parser           NO PARSER, turn off the HTML page parser");
   puts("      --no-follow           NO FOLLOW, do not follow HTTP redirects");
   puts("");
@@ -374,6 +378,13 @@ parse_cmdline(int argc, char *argv[])
         my.limit = atoi(optarg);
         if (my.limit < 1) my.limit = 1;
         break;
+      case 1009:
+        my.crash_guard = TRUE;
+        my.core_dumps = FALSE;
+        break;
+      case 1010:
+        my.core_dumps = FALSE;
+        break;
 
     } /* end of switch( c )           */
   }   /* end of while c = getopt_long */
@@ -389,6 +400,70 @@ parse_cmdline(int argc, char *argv[])
   }
   return;
 } /* end of parse_cmdline */
+
+private const char *
+__signal_name(int sig)
+{
+  switch (sig) {
+    case SIGSEGV: return "SIGSEGV";
+    case SIGABRT: return "SIGABRT";
+#ifdef SIGBUS
+    case SIGBUS:  return "SIGBUS";
+#endif
+#ifdef SIGILL
+    case SIGILL:  return "SIGILL";
+#endif
+#ifdef SIGFPE
+    case SIGFPE:  return "SIGFPE";
+#endif
+    default:      return "fatal signal";
+  }
+}
+
+private void
+__fatal_signal_handler(int sig)
+{
+  const char prefix[] = "\nsiege: caught ";
+  const char suffix[] = ". Core dump disabled; reduce concurrency or raise VPS limits if this repeats.\n";
+  const char *name = __signal_name(sig);
+
+  write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  write(STDERR_FILENO, name, strlen(name));
+  write(STDERR_FILENO, suffix, sizeof(suffix) - 1);
+  _exit(128 + sig);
+}
+
+private void
+__crash_guard_setup()
+{
+  struct sigaction sa;
+
+  if (my.core_dumps == FALSE) {
+#ifdef RLIMIT_CORE
+    struct rlimit lim;
+    lim.rlim_cur = 0;
+    lim.rlim_max = 0;
+    setrlimit(RLIMIT_CORE, &lim);
+#endif
+  }
+
+  if (my.crash_guard == FALSE) return;
+
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = __fatal_signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGSEGV, &sa, NULL);
+  sigaction(SIGABRT, &sa, NULL);
+#ifdef SIGBUS
+  sigaction(SIGBUS, &sa, NULL);
+#endif
+#ifdef SIGILL
+  sigaction(SIGILL, &sa, NULL);
+#endif
+#ifdef SIGFPE
+  sigaction(SIGFPE, &sa, NULL);
+#endif
+}
 
 private void
 __signal_setup()
@@ -496,6 +571,9 @@ __auto_tune()
 
   if (my.autotune == FALSE) return;
 
+  my.crash_guard = TRUE;
+  my.core_dumps = FALSE;
+
   cpus              = __online_cpus();
   memory_mb         = __available_memory_mb();
   nofile            = 0;
@@ -518,11 +596,11 @@ __auto_tune()
   }
 
   if (my.thread_stack_set == FALSE && my.cusers_set == TRUE && my.cusers >= 300) {
-    my.thread_stack_kb = 512;
+    my.thread_stack_kb = my.cusers >= 1000 ? 384 : 512;
   }
 
   if (my.cusers_set == TRUE) {
-    max_cusers = __min_positive_int(max_cusers, cpus * 250);
+    max_cusers = __min_positive_int(max_cusers, cpus * 500);
   } else {
     max_cusers = __min_positive_int(max_cusers, cpus * 100);
   }
@@ -584,6 +662,46 @@ __auto_tune()
   }
 }
 
+private void
+__runtime_preflight(int urls_count)
+{
+  long nofile = 0;
+  long nproc  = 0;
+  unsigned long long memory_mb = __available_memory_mb();
+  unsigned long long stack_mb;
+  unsigned long long generated;
+  int stack_kb = my.thread_stack_kb > 0 ? my.thread_stack_kb : 8192;
+
+#ifdef RLIMIT_NOFILE
+  nofile = __soft_limit(RLIMIT_NOFILE);
+#endif
+#ifdef RLIMIT_NPROC
+  nproc = __soft_limit(RLIMIT_NPROC);
+#endif
+
+  if (my.cusers > my.limit) {
+    NOTIFY(FATAL, "concurrency %d exceeds limit %d; use --limit=%d if this is intentional", my.cusers, my.limit, my.cusers);
+  }
+
+  if (nofile > 0 && nofile != LONG_MAX && nofile < ((long)my.cusers * 2L + 64L)) {
+    NOTIFY(FATAL, "open-file limit %ld is too low for %d users; run: ulimit -n %ld", nofile, my.cusers, ((long)my.cusers * 2L + 64L));
+  }
+
+  if (nproc > 0 && nproc != LONG_MAX && nproc < ((long)my.cusers + 16L)) {
+    NOTIFY(FATAL, "process/thread limit %ld is too low for %d users; raise ulimit -u", nproc, my.cusers);
+  }
+
+  stack_mb = ((unsigned long long)stack_kb * (unsigned long long)my.cusers) / 1024ULL;
+  if (memory_mb > 0 && stack_mb > (memory_mb * 3ULL / 4ULL)) {
+    NOTIFY(FATAL, "worker stacks reserve %lluMB on %lluMB available RAM; use --thread-stack=512 or lower concurrency", stack_mb, memory_mb);
+  }
+
+  generated = (unsigned long long)urls_count * (unsigned long long)(my.reps > 0 && my.reps != MAXREPS ? my.reps : 1);
+  if (generated > 10000000ULL && !my.quiet) {
+    fprintf(stderr, "WARNING: this run schedules a very large request set (%llu URL/repetition slots)\n", generated);
+  }
+}
+
 private int
 __load_lines(LINES *lines, const char *filename, int limit)
 {
@@ -600,16 +718,18 @@ __load_lines(LINES *lines, const char *filename, int limit)
 
   while (fgets(buf, sizeof(buf), fp) != NULL) {
     char *p = strchr(buf, '\n');
+    char **tmp;
     if (p != NULL) *p = '\0';
     p = strchr(buf, '\r');
     if (p != NULL) *p = '\0';
     if (strlen(buf) == 0 || buf[0] == '#') continue;
 
-    lines->line = (char**)realloc(lines->line, sizeof(char *) * (lines->index + 1));
-    if (lines->line == NULL) {
+    tmp = (char**)realloc(lines->line, sizeof(char *) * (lines->index + 1));
+    if (tmp == NULL) {
       fclose(fp);
       NOTIFY(FATAL, "unable to allocate memory for lines from: %s", filename);
     }
+    lines->line = tmp;
     lines->line[lines->index] = xstrdup(buf);
     lines->index++;
     if (limit > 0 && lines->index >= limit) break;
@@ -877,6 +997,7 @@ main(int argc, char *argv[])
  
   __signal_setup();
   __config_setup(argc, argv);
+  __crash_guard_setup();
   lines = __urls_setup();
   srand((unsigned int)time(NULL));
   if (my.uadefault == TRUE && strlen(my.uafile) == 0) {
@@ -913,6 +1034,9 @@ main(int argc, char *argv[])
   i = 0;
   if (my.url != NULL) {
     URL tmp = new_url(my.url);
+    if (tmp == NULL) {
+      NOTIFY(FATAL, "malformed URL: %s", my.url);
+    }
     url_set_ID(tmp, 0);
     if (my.get && url_get_method(tmp) != POST && url_get_method(tmp) != PUT) {
       url_set_method(tmp, my.method); 
@@ -936,6 +1060,7 @@ main(int argc, char *argv[])
   if (my.length == 0) {
     NOTIFY(FATAL, "no usable URLs were generated or loaded");
   }
+  __runtime_preflight(my.length);
 
   for (i = 0; i < my.cusers; i++) {
     BROWSER B = new_browser(i+1, file);
