@@ -112,6 +112,8 @@ init_config(void)
   my.parser         = FALSE;
   my.secs           = -1;
   my.limit          = 255;
+  my.thread_stack_kb = 0;
+  my.thread_stack_set = FALSE;
   my.reps           = MAXREPS; 
   my.bids           = 5;
   my.login          = FALSE;
@@ -250,6 +252,7 @@ show_config(int EXIT)
   printf("named URL:                      %s\n", my.url==NULL||strlen(my.url) < 2 ? "none" : my.url);
   printf("URLs file:                      %s\n", strlen(my.file) > 1 ? my.file : URL_FILE);
   printf("thread limit:                   %d\n", (my.limit < 1) ? 255 : my.limit);
+  printf("worker thread stack:            %d KB\n", my.thread_stack_kb);
   printf("logging:                        %s\n", my.logging ? "true" : "false");
   printf("log file:                       %s\n", (my.logfile == NULL) ? LOG_FILE : my.logfile);
   printf("resource file:                  %s\n", my.rc);
@@ -483,6 +486,12 @@ load_conf(char *filename)
         my.limit = atoi(value);
       } else {
         my.limit = 255;
+      }
+    }
+    else if (strmatch(option, "thread-stack")) {
+      if (value != NULL) {
+        my.thread_stack_kb = atoi(value);
+        if (my.thread_stack_kb < 0) my.thread_stack_kb = 0;
       }
     }
     else if (strmatch(option, "time")) {

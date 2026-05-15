@@ -149,6 +149,15 @@ Ubuntu server, this prevents commands such as `-c5000 --nocache=1000` from
 trying to create far more threads and generated URLs than the machine can
 handle.
 
+For high concurrency on a small Linux VPS, reduce worker pthread stack
+reservation and raise the runtime cap explicitly:
+
+  ulimit -n 4096
+  siege https://example.com/ --auto-tune --limit=500 --thread-stack=512 -u -c500 -r100
+
+If `--auto-tune` sees an explicit concurrency of 300 or more and no
+`--thread-stack` value, it automatically uses a 512 KB worker stack.
+
 Supported user-agent modes are fixed, round-robin, and random. The existing
 -A/--user-agent option still works for a single fixed User-Agent. The -u
 shortcut uses indefinite round-robin rotation over the bundled list. You can

@@ -53,13 +53,19 @@ new_crew(int size, int maxsize, BOOLEAN block)
 {
   int    x;
   int    c;
+  int    y;
   CREW this;
+  pthread_attr_t attr;
+  pthread_attr_t *attrp = NULL;
+  size_t stack_size;
   
   if ((this = calloc(sizeof(*this),1)) == NULL)
     return NULL;
   
-  if ((this->threads = (pthread_t *)malloc(sizeof(pthread_t)*size)) == NULL)
+  if ((this->threads = (pthread_t *)malloc(sizeof(pthread_t)*size)) == NULL) {
+    xfree(this);
     return NULL;
+  }
 
   this->size     = size;
   this->maxsize  = maxsize;
@@ -80,17 +86,43 @@ new_crew(int size, int maxsize, BOOLEAN block)
   if ((c = pthread_cond_init(&(this->empty), NULL)) != 0)
     return NULL;
 
+  if (my.thread_stack_kb > 0) {
+    stack_size = (size_t)my.thread_stack_kb * 1024;
+#ifdef PTHREAD_STACK_MIN
+    if (stack_size < PTHREAD_STACK_MIN) stack_size = PTHREAD_STACK_MIN;
+#endif
+    if ((c = pthread_attr_init(&attr)) == 0) {
+      if ((c = pthread_attr_setstacksize(&attr, stack_size)) == 0) {
+        attrp = &attr;
+      } else {
+        NOTIFY(WARNING, "Unable to set worker stack size to %d KB", my.thread_stack_kb);
+        pthread_attr_destroy(&attr);
+      }
+    }
+  }
+
   for (x = 0; x != size; x++) {
-    if ((c = pthread_create(&(this->threads[x]), NULL, crew_thread, (void *)this)) != 0) {
-      switch (errno) {
+    if ((c = pthread_create(&(this->threads[x]), attrp, crew_thread, (void *)this)) != 0) {
+      switch (c) {
         case EINVAL: { NOTIFY(ERROR, "Error creating additional threads %s:%d",     __FILE__, __LINE__);  break; }
         case EPERM:  { NOTIFY(ERROR, "Inadequate permission to create pool %s:%d",  __FILE__, __LINE__);  break; }
         case EAGAIN: { NOTIFY(ERROR, "Inadequate resources to create pool %s:%d",   __FILE__, __LINE__);  break; }
         case ENOMEM: { NOTIFY(ERROR, "Exceeded thread limit for this system %s:%d", __FILE__, __LINE__);  break; }
         default:     { NOTIFY(ERROR, "Unknown error building thread pool %s:%d",    __FILE__, __LINE__);  break; }
-      } return NULL;
+      }
+      pthread_mutex_lock(&(this->lock));
+      this->shutdown = TRUE;
+      pthread_cond_broadcast(&(this->not_empty));
+      pthread_mutex_unlock(&(this->lock));
+      for (y = 0; y < x; y++) {
+        pthread_join(this->threads[y], NULL);
+      }
+      if (attrp != NULL) pthread_attr_destroy(attrp);
+      crew_destroy(this);
+      return NULL;
     } 
   }
+  if (attrp != NULL) pthread_attr_destroy(attrp);
   return this;
 }
 
@@ -354,5 +386,4 @@ crew_get_shutdown(CREW this)
 
   return shutdown;
 }
-
 

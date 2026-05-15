@@ -95,6 +95,8 @@ static struct option long_options[] =
   { "nocache",      required_argument, NULL, 1005 },
   { "auto-tune",    no_argument,       NULL, 1006 },
   { "autotune",     no_argument,       NULL, 1006 },
+  { "thread-stack", required_argument, NULL, 1007 },
+  { "limit",        required_argument, NULL, 1008 },
   {0, 0, 0, 0}
 };
 
@@ -177,6 +179,8 @@ display_help()
   puts("      --wp-litespeed-owasp  Add LiteSpeed/OWASP regression search probes");
   puts("      --nocache=NUM         Generate numbered nocache URL variants");
   puts("      --auto-tune           Optimize concurrency and generated URLs here");
+  puts("      --thread-stack=KB     Worker thread stack size for high concurrency");
+  puts("      --limit=NUM           Raise/lower the configured thread cap");
   puts("      --no-parser           NO PARSER, turn off the HTML page parser");
   puts("      --no-follow           NO FOLLOW, do not follow HTTP redirects");
   puts("");
@@ -361,6 +365,15 @@ parse_cmdline(int argc, char *argv[])
       case 1006:
         my.autotune = TRUE;
         break;
+      case 1007:
+        my.thread_stack_kb = atoi(optarg);
+        if (my.thread_stack_kb < 0) my.thread_stack_kb = 0;
+        my.thread_stack_set = TRUE;
+        break;
+      case 1008:
+        my.limit = atoi(optarg);
+        if (my.limit < 1) my.limit = 1;
+        break;
 
     } /* end of switch( c )           */
   }   /* end of while c = getopt_long */
@@ -474,9 +487,11 @@ __auto_tune()
   long nproc;
   int  original_cusers;
   int  original_nocache;
+  int  original_stack;
   int  max_cusers;
   int  recommended_cusers;
   int  nocache_cap;
+  int  worker_mb;
   unsigned long long memory_mb;
 
   if (my.autotune == FALSE) return;
@@ -487,6 +502,7 @@ __auto_tune()
   nproc             = 0;
   original_cusers   = my.cusers;
   original_nocache  = my.nocache;
+  original_stack    = my.thread_stack_kb;
   max_cusers        = my.limit > 0 ? my.limit : 255;
 
 #ifdef RLIMIT_NOFILE
@@ -496,14 +512,29 @@ __auto_tune()
   nproc = __soft_limit(RLIMIT_NPROC);
 #endif
 
-  max_cusers = __min_positive_int(max_cusers, cpus * 100);
+  if (my.cusers_set == TRUE && my.cusers > max_cusers) {
+    max_cusers = my.cusers;
+    my.limit = my.cusers;
+  }
+
+  if (my.thread_stack_set == FALSE && my.cusers_set == TRUE && my.cusers >= 300) {
+    my.thread_stack_kb = 512;
+  }
+
+  if (my.cusers_set == TRUE) {
+    max_cusers = __min_positive_int(max_cusers, cpus * 250);
+  } else {
+    max_cusers = __min_positive_int(max_cusers, cpus * 100);
+  }
 
   if (memory_mb > 0) {
-    unsigned long long usable = memory_mb > 256 ? memory_mb - 256 : memory_mb / 2;
-    max_cusers = __min_positive_int(max_cusers, (long)(usable / 4));
+    unsigned long long usable = memory_mb > 128 ? memory_mb - 128 : memory_mb / 2;
+    worker_mb = my.thread_stack_kb > 0 ? ((my.thread_stack_kb + 1023) / 1024) : 4;
+    if (worker_mb < 1) worker_mb = 1;
+    max_cusers = __min_positive_int(max_cusers, (long)(usable / worker_mb));
   }
   if (nofile > 128 && nofile != LONG_MAX) {
-    max_cusers = __min_positive_int(max_cusers, (nofile - 64) / 4);
+    max_cusers = __min_positive_int(max_cusers, (nofile - 64) / 2);
   }
   if (nproc > 64 && nproc != LONG_MAX) {
     max_cusers = __min_positive_int(max_cusers, (nproc - 16) / 2);
@@ -541,6 +572,10 @@ __auto_tune()
     if (nproc > 0 && nproc != LONG_MAX) fprintf(stderr, " nproc=%ld", nproc);
     fprintf(stderr, " concurrent=%d", my.cusers);
     if (original_cusers != my.cusers) fprintf(stderr, " (from %d)", original_cusers);
+    if (my.thread_stack_kb > 0) {
+      fprintf(stderr, " thread-stack=%dKB", my.thread_stack_kb);
+      if (original_stack != my.thread_stack_kb) fprintf(stderr, " (auto)");
+    }
     if (original_nocache > 0) {
       fprintf(stderr, " nocache=%d", my.nocache);
       if (original_nocache != my.nocache) fprintf(stderr, " (from %d)", original_nocache);

@@ -154,6 +154,8 @@ struct CONFIG
   BOOLEAN logging;       /* boolean, log transactions to log file   */
   BOOLEAN shlog;         /* show log file configuration directive.  */
   int     limit;         /* Limits the thread count to int          */
+  int     thread_stack_kb; /* worker pthread stack size in KB       */
+  BOOLEAN thread_stack_set; /* boolean, command line set stack.     */
   char    *url;          /* URL for the single hit invocation.      */
   char    logfile[4096]; /* alternative logfile defined in siegerc  */ 
   BOOLEAN verbose;       /* boolean, verbose output to screen       */

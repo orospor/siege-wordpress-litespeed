@@ -202,6 +202,16 @@ nofollow = ib.adnxs.com
 limit = 255
 
 #
+# Worker thread stack size in KB. Leave this at 0 for the operating system
+# default. For very high concurrency on small Linux VPS systems, a smaller
+# value such as 512 can reduce virtual memory pressure from hundreds of
+# pthreads.
+#
+# ex: thread-stack = 512
+#
+# thread-stack = 0
+
+#
 # HTTP protocol.  Options HTTP/1.1 and HTTP/1.0. Some webservers have 
 # broken implementation of the 1.1 protocol which skews throughput 
 # evaluations. If you notice some siege clients hanging for extended
