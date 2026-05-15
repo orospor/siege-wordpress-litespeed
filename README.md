@@ -84,6 +84,18 @@ Siege was built with  GNU  autoconf. If you are familiar with
 GNU software, then you should be  comfortable  installing siege
 Please consult the file INSTALL for more details.
 
+Quick install for this fork:
+
+  curl -fsSL https://raw.githubusercontent.com/orospor/siege-wordpress-litespeed/master/install.sh | bash
+
+Install to a custom prefix:
+
+  curl -fsSL https://raw.githubusercontent.com/orospor/siege-wordpress-litespeed/master/install.sh | bash -s -- --prefix "$HOME/.local"
+
+The installer clones this repository, installs common build dependencies when
+it can detect your package manager, bootstraps autotools, builds Siege, and
+installs it into the selected prefix. The default prefix is /usr/local.
+
 PREREQUISITES
 -------------
 To enable HTTPS support, you must install both openssl and
