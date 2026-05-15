@@ -187,54 +187,63 @@ browser_destroy(BROWSER this)
 char * 
 browser_get_cookies(BROWSER this)
 {
+  if (this == NULL || this->facts == NULL) return NULL;
   return get_cookies(this->facts);
 }
 
 unsigned long
 browser_get_hits(BROWSER this)
 {
+  if (this == NULL) return 0;
   return this->hits;
 }
 
 unsigned long long 
 browser_get_bytes(BROWSER this)
 {
+  if (this == NULL) return 0;
   return this->bytes;
 }
 
 float 
 browser_get_time(BROWSER this)
 {
+  if (this == NULL) return 0.0;
   return this->time;
 }
 
 unsigned int  
 browser_get_code(BROWSER this)
 {
+  if (this == NULL) return 0;
   return this->code;
 }
 
 unsigned int  
 browser_get_okay(BROWSER this)
 {
+  if (this == NULL) return 0;
   return this->okay;
 }
 
 unsigned int  
 browser_get_fail(BROWSER this)
 {
+  if (this == NULL) return 0;
   return this->fail;
 }
 
 float
 browser_get_himark(BROWSER this)
 {
+  if (this == NULL) return 0.0;
   return this->himark;
 }
 
 float
 browser_get_lomark(BROWSER this)
 {
+  if (this == NULL) return 0.0;
   return this->lomark;
 }
 
@@ -246,11 +255,22 @@ start(BROWSER this)
   int max_y;
   int ret;
   int len; 
+  if (this == NULL || this->urls == NULL || array_length(this->urls) < 1) {
+    return NULL;
+  }
+
   this->conn  = NULL;
   this->conn = xcalloc(sizeof(CONN), 1);
   this->conn->sock       = -1;
   this->conn->page       = new_page("");
   this->conn->cache      = new_cache();
+  if (this->conn->page == NULL || this->conn->cache == NULL) {
+    this->conn->page  = page_destroy(this->conn->page);
+    this->conn->cache = cache_destroy(this->conn->cache);
+    xfree(this->conn);
+    this->conn = NULL;
+    return NULL;
+  }
 
 #ifdef SIGNAL_CLIENT_PLATFORM
   pthread_once(&this->once, __signal_init);

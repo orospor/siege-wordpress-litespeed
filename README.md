@@ -153,10 +153,12 @@ For high concurrency on a small Linux VPS, reduce worker pthread stack
 reservation and raise the runtime cap explicitly:
 
   ulimit -n 4096
-  siege https://example.com/ --auto-tune --limit=750 --thread-stack=512 -u -c500 -r100
+  siege https://example.com/ --auto-tune --limit=750 --thread-stack=1024 -u -c500 -r100
 
 If `--auto-tune` sees an explicit concurrency of 300 or more and no
-`--thread-stack` value, it automatically uses a 512 KB worker stack.
+`--thread-stack` value, it automatically uses a 1024 KB worker stack. This is
+larger than the earlier 512 KB default because HTTPS, Tor/torsocks, and OpenSSL
+can overflow very small pthread stacks under high concurrency.
 It also enables crash guard mode, disables core dump files, and runs a
 preflight check for open-file limits, process/thread limits, stack reservation,
 and generated URL volume before creating workers.
@@ -164,7 +166,7 @@ and generated URL volume before creating workers.
 On a 2 GB VPS, start with:
 
   ulimit -n 4096
-  siege https://example.com/ --auto-tune --limit=1000 --thread-stack=512 -u -c500 -r100
+  siege https://example.com/ --auto-tune --limit=1000 --thread-stack=1024 -u -c500 -r100
 
 Then raise `-c` gradually after the run completes without resource warnings.
 

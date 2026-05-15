@@ -102,6 +102,9 @@ static struct option long_options[] =
   {0, 0, 0, 0}
 };
 
+private char   __crash_context[512];
+private size_t __crash_context_len = 0;
+
 /**
  * display_version   
  * displays the version number and exits on boolean false. 
@@ -424,13 +427,36 @@ private void
 __fatal_signal_handler(int sig)
 {
   const char prefix[] = "\nsiege: caught ";
-  const char suffix[] = ". Core dump disabled; reduce concurrency or raise VPS limits if this repeats.\n";
+  const char suffix[] = ". Core dump disabled.\n";
+  const char hint[] = "hint: try a larger --thread-stack, lower -c, or raise VPS limits.\n";
   const char *name = __signal_name(sig);
 
   write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
   write(STDERR_FILENO, name, strlen(name));
   write(STDERR_FILENO, suffix, sizeof(suffix) - 1);
+  if (__crash_context_len > 0) {
+    write(STDERR_FILENO, __crash_context, __crash_context_len);
+  }
+  write(STDERR_FILENO, hint, sizeof(hint) - 1);
   _exit(128 + sig);
+}
+
+private void
+__set_crash_context(const char *stage)
+{
+  int n = snprintf(
+    __crash_context, sizeof(__crash_context),
+    "context: stage=%s concurrent=%d limit=%d thread-stack=%dKB urls=%d reps=%d nocache=%d ua=%d\n",
+    stage, my.cusers, my.limit, my.thread_stack_kb, my.length, my.reps, my.nocache, my.uagents.index
+  );
+
+  if (n < 0) {
+    __crash_context_len = 0;
+  } else if ((size_t)n >= sizeof(__crash_context)) {
+    __crash_context_len = sizeof(__crash_context) - 1;
+  } else {
+    __crash_context_len = (size_t)n;
+  }
 }
 
 private void
@@ -596,7 +622,7 @@ __auto_tune()
   }
 
   if (my.thread_stack_set == FALSE && my.cusers_set == TRUE && my.cusers >= 300) {
-    my.thread_stack_kb = my.cusers >= 1000 ? 384 : 512;
+    my.thread_stack_kb = 1024;
   }
 
   if (my.cusers_set == TRUE) {
@@ -693,7 +719,11 @@ __runtime_preflight(int urls_count)
 
   stack_mb = ((unsigned long long)stack_kb * (unsigned long long)my.cusers) / 1024ULL;
   if (memory_mb > 0 && stack_mb > (memory_mb * 3ULL / 4ULL)) {
-    NOTIFY(FATAL, "worker stacks reserve %lluMB on %lluMB available RAM; use --thread-stack=512 or lower concurrency", stack_mb, memory_mb);
+    NOTIFY(FATAL, "worker stacks reserve %lluMB on %lluMB available RAM; use a smaller --thread-stack or lower concurrency", stack_mb, memory_mb);
+  }
+
+  if (my.thread_stack_kb > 0 && my.thread_stack_kb < 1024 && !my.quiet) {
+    fprintf(stderr, "WARNING: --thread-stack=%d may be too small for HTTPS/Tor/OpenSSL at high concurrency; 1024 is safer.\n", my.thread_stack_kb);
   }
 
   generated = (unsigned long long)urls_count * (unsigned long long)(my.reps > 0 && my.reps != MAXREPS ? my.reps : 1);
@@ -980,7 +1010,7 @@ main(int argc, char *argv[])
   char      name[]   = "cookies.txt";
   char  *   home     = getenv("HOME");
   int       length   = home ? strlen(home)+strlen(name)+9 : 256;
-  char  *   file     = xmalloc(length); 
+  char  *   file     = NULL;
   LINES *   lines    = NULL;
   CREW      crew     = NULL;
   DATA      data     = NULL;
@@ -991,12 +1021,13 @@ main(int argc, char *argv[])
   pthread_attr_t scope_attr;
 
 
-  file = xmalloc(sizeof (char*) * length);
-  memset(file, '\0', sizeof (char*) * length);
-  snprintf(file, length, "%s/.siege/%s", home, name);
+  file = xmalloc(length);
+  memset(file, '\0', length);
+  snprintf(file, length, "%s/.siege/%s", home ? home : ".", name);
  
   __signal_setup();
   __config_setup(argc, argv);
+  __set_crash_context("configured");
   __crash_guard_setup();
   lines = __urls_setup();
   srand((unsigned int)time(NULL));
@@ -1060,6 +1091,7 @@ main(int argc, char *argv[])
   if (my.length == 0) {
     NOTIFY(FATAL, "no usable URLs were generated or loaded");
   }
+  __set_crash_context("urls-ready");
   __runtime_preflight(my.length);
 
   for (i = 0; i < my.cusers; i++) {
@@ -1087,6 +1119,7 @@ main(int argc, char *argv[])
     }
     array_npush(browsers, B, BROWSERSIZE);
   }
+  __set_crash_context("browsers-ready");
 
   if ((crew = new_crew(my.cusers, my.cusers, FALSE)) == NULL) {
     NOTIFY(FATAL, "unable to allocate memory for %d simulated browser", my.cusers);  
@@ -1099,6 +1132,7 @@ main(int argc, char *argv[])
   if ((result = pthread_create(&cease, NULL, sig_handler, (void*)crew)) != 0) {
     NOTIFY(FATAL, "failed to create handler: %d\n", result);
   }
+  __set_crash_context("crew-ready");
   if (my.secs > 0) {
     if ((result = pthread_create(&timer, NULL, siege_timer, (void*)&cease)) != 0) {
       NOTIFY(FATAL, "failed to create handler: %d\n", result);
@@ -1118,7 +1152,11 @@ main(int argc, char *argv[])
   } 
 
   data = new_data();
+  if (data == NULL) {
+    NOTIFY(FATAL, "unable to allocate stats collector");
+  }
   data_set_start(data);
+  __set_crash_context("running");
   for (i = 0; i < my.cusers && crew_get_shutdown(crew) != TRUE; i++) {
     BROWSER B = (BROWSER)array_get(browsers, i);
     result = crew_add(crew, (void*)start, B);
@@ -1156,6 +1194,7 @@ main(int argc, char *argv[])
   for (i = 0; i < ((crew_get_total(crew) > my.cusers || 
                     crew_get_total(crew) == 0) ? my.cusers : crew_get_total(crew)); i++) {
     BROWSER B = (BROWSER)array_get(browsers, i);
+    if (B == NULL) continue;
     data_increment_count  (data, browser_get_hits(B));
     data_increment_bytes  (data, browser_get_bytes(B));
     data_increment_total  (data, browser_get_time(B));

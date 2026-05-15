@@ -67,6 +67,7 @@ new_data()
   DATA this;
 
   this = calloc(sizeof(*this),1);
+  if (this == NULL) return NULL;
   this->total      = 0.0;
   this->available  = 0.0;
   this->count      = 0.0;
@@ -78,6 +79,10 @@ new_data()
   this->bytes      = 0.0;
   this->len        = 8096;
   this->cookies    = xmalloc(this->len);
+  if (this->cookies == NULL) {
+    xfree(this);
+    return NULL;
+  }
   this->cookies[0] = '\0';
   return this;
 }
@@ -85,6 +90,8 @@ new_data()
 DATA
 data_destroy(DATA this)
 {
+  if (this == NULL) return NULL;
+  xfree(this->cookies);
   xfree(this);
   return NULL;
 } 
@@ -302,4 +309,3 @@ data_get_cookies(DATA this)
 {
   return this->cookies;
 }
-
