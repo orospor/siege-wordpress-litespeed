@@ -105,11 +105,10 @@ __load_cookies(FACTS this, char * file)
   char   line[len];
 
   snprintf(this->key, sizeof(this->key), "siege-%d", this->id);
-  if (! __contains(file, this->key)) {
+  if (! __exists(file)) {
     return FALSE;
   }
-
-  if (! __exists(file)) {
+  if (! __contains(file, this->key)) {
     return FALSE;
   }
 
@@ -157,7 +156,6 @@ __contains(const char *filename, const char *target)
 {
   FILE *file = fopen(filename, "r");
   if (!file) {
-    perror("Could not open file");
     return 0;
   }
 
@@ -212,4 +210,3 @@ __exists(char *file)
   }
   return FALSE;
 }
-
