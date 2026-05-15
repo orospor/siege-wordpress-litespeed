@@ -32,4 +32,4 @@ SUBDIRS           =    . include src utils doc html
 
 DIST_SUBDIRS      =    $(SUBDIRS)
 
-EXTRA_DIST        =    README.md
+EXTRA_DIST        =    README.md install.sh data/useragents.txt

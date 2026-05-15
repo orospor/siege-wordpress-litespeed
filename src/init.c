@@ -125,6 +125,8 @@ init_config(void)
   my.json_output    = FALSE;
   my.extra[0]       = 0;
   my.uafile[0]      = 0;
+  my.ualimit        = 0;
+  my.uadefault      = FALSE;
   my.uagents.index  = 0;
   my.uagents.line   = NULL;
   my.uamode         = UA_FIXED;
@@ -236,6 +238,7 @@ show_config(int EXIT)
   printf("cache enabled:                  %s\n", my.cache==TRUE ? "true" : "false");
   printf("accept-encoding:                %s\n", my.encoding);
   printf("user-agent file:                %s\n", strlen(my.uafile) > 0 ? my.uafile : "none");
+  printf("user-agent limit:               %d\n", my.ualimit);
   printf("user-agent rotation:            %s\n", my.uamode == UA_RANDOM ? "random" : (my.uamode == UA_ROUND_ROBIN ? "round-robin" : "fixed"));
   printf("delay:                          %.3f sec%s\n", my.delay, (my.delay > 1) ? "s" : "");
   printf("internet simulation:            %s\n", my.internet?"true":"false");
@@ -539,6 +542,12 @@ load_conf(char *filename)
     else if (strmatch(option, "user-agent-file")) {
       xstrncpy(my.uafile, value, sizeof(my.uafile));
       my.uamode = UA_ROUND_ROBIN;
+    }
+    else if (strmatch(option, "usera-agents") || strmatch(option, "user-agents")) {
+      my.ualimit = atoi(value);
+      if (my.ualimit < 0) my.ualimit = 0;
+      my.uadefault = TRUE;
+      if (my.uamode_set == FALSE) my.uamode = UA_ROUND_ROBIN;
     }
     else if (strmatch(option, "user-agent-mode")) {
       my.uamode_set = TRUE;

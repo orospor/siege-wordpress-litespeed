@@ -446,8 +446,10 @@ benchmark = false
 #
 # ex: user-agent-file = /Users/gurujee/Documents/backups/useragents.txt
 # ex: user-agent-mode = random
+# ex: usera-agents = 500
 #
 # user-agent-file =
+# usera-agents = 0
 # user-agent-mode = fixed
 
 #

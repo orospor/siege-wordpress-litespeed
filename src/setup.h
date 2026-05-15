@@ -187,6 +187,8 @@ struct CONFIG
   //COOKIES cookies;       /* cookies    */
   char uagent[256];      /* user defined User-Agent string.         */
   char uafile[255];      /* file with User-Agent strings.           */
+  int  ualimit;          /* max User-Agent strings to load.         */
+  BOOLEAN uadefault;     /* boolean, use bundled User-Agent file.   */
   LINES uagents;         /* loaded User-Agent strings.              */
   UAMODE uamode;         /* user-agent selection strategy.          */
   BOOLEAN uamode_set;    /* boolean, user explicitly set mode.      */

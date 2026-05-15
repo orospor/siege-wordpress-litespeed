@@ -130,8 +130,18 @@ Rotate user agents from a one-per-line file:
   siege --user-agent-file=/Users/gurujee/Documents/backups/useragents.txt \
         --user-agent-mode=random https://example.com/
 
+Use the bundled User-Agent list installed by this fork:
+
+  siege -u https://example.com/
+
+Limit the bundled list to the first NUM entries:
+
+  siege --usera-agents=500 https://example.com/
+
 Supported user-agent modes are fixed, round-robin, and random. The existing
--A/--user-agent option still works for a single fixed User-Agent.
+-A/--user-agent option still works for a single fixed User-Agent. The -u
+shortcut uses indefinite round-robin rotation over the bundled list. You can
+also set SIEGE_USER_AGENTS_FILE to point at a different default list.
 
 Generate WordPress search requests with /?s=<term>:
 

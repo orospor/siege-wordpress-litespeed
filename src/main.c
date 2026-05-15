@@ -85,6 +85,8 @@ static struct option long_options[] =
   { "user-agent",   required_argument, NULL, 'A' },
   { "user-agent-file", required_argument, NULL, 1000 },
   { "user-agent-mode", required_argument, NULL, 1001 },
+  { "usera-agents", optional_argument, NULL, 'u' },
+  { "user-agents",  optional_argument, NULL, 'u' },
   { "content-type", required_argument, NULL, 'T' },
   { "json-output",  no_argument,       NULL, 'j' },
   { "wp-search",    required_argument, NULL, 1002 },
@@ -165,6 +167,7 @@ display_help()
   puts("  -A, --user-agent=\"text\"   Sets User-Agent in request" ); 
   puts("      --user-agent-file=FILE Rotate User-Agent strings from FILE" );
   puts("      --user-agent-mode=MODE fixed, round-robin, or random" );
+  puts("  -u, --usera-agents[=NUM]  Use bundled User-Agent list, optional limit" );
   puts("  -T, --content-type=\"text\" Sets Content-Type in request" ); 
   puts("  -j, --json-output         JSON OUTPUT, print final stats to stdout as JSON");
   puts("      --wp-search=URL       Generate WordPress ?s= search probes for URL");
@@ -193,7 +196,7 @@ parse_rc_cmdline(int argc, char *argv[])
   strcpy(my.rc, "");
   
   while( a > -1 ){
-    a = getopt_long(argc, argv, "VhvqCDNFpgl::ibr:t:f:d:c:m:H:R:A:T:j", long_options, (int*)0);
+    a = getopt_long(argc, argv, "VhvqCDNFpgl::ibu::r:t:f:d:c:m:H:R:A:T:j", long_options, (int*)0);
     if(a == 'R'){
       strcpy(my.rc, optarg);
       a = -1;
@@ -212,7 +215,7 @@ parse_cmdline(int argc, char *argv[])
 {
   int c = 0;
   int nargs;
-  while ((c = getopt_long(argc, argv, "VhvqCDNFpgl::ibr:t:f:d:c:m:H:R:A:T:j", long_options, (int *)0)) != EOF) {
+  while ((c = getopt_long(argc, argv, "VhvqCDNFpgl::ibu::r:t:f:d:c:m:H:R:A:T:j", long_options, (int *)0)) != EOF) {
   switch (c) {
       case 'V':
         display_version(TRUE);
@@ -305,6 +308,12 @@ parse_cmdline(int argc, char *argv[])
           NOTIFY(FATAL, "unknown user-agent mode: %s", optarg);
         }
         break;
+      case 'u':
+        my.ualimit = optarg == NULL ? 0 : atoi(optarg);
+        if (my.ualimit < 0) my.ualimit = 0;
+        my.uadefault = TRUE;
+        if (my.uamode_set == FALSE) my.uamode = UA_ROUND_ROBIN;
+        break;
       case 'T':
         strncpy(my.conttype, optarg, 255);
         break;
@@ -372,7 +381,7 @@ __signal_setup()
 }
 
 private int
-__load_lines(LINES *lines, const char *filename)
+__load_lines(LINES *lines, const char *filename, int limit)
 {
   FILE *fp;
   char  buf[8192];
@@ -399,9 +408,38 @@ __load_lines(LINES *lines, const char *filename)
     }
     lines->line[lines->index] = xstrdup(buf);
     lines->index++;
+    if (limit > 0 && lines->index >= limit) break;
   }
   fclose(fp);
   return lines->index;
+}
+
+private char *
+__default_user_agents_file()
+{
+  static char path[4096];
+  char *env  = getenv("SIEGE_USER_AGENTS_FILE");
+  char *home = getenv("HOME");
+
+  if (env != NULL && strlen(env) > 0 && access(env, R_OK) == 0) {
+    return env;
+  }
+
+  if (home != NULL && strlen(home) > 0) {
+    snprintf(path, sizeof(path), "%s/.siege/useragents.txt", home);
+    if (access(path, R_OK) == 0) return path;
+  }
+
+  snprintf(path, sizeof(path), "data/useragents.txt");
+  if (access(path, R_OK) == 0) return path;
+
+  snprintf(path, sizeof(path), "/usr/local/share/siege/useragents.txt");
+  if (access(path, R_OK) == 0) return path;
+
+  snprintf(path, sizeof(path), "/opt/homebrew/share/siege/useragents.txt");
+  if (access(path, R_OK) == 0) return path;
+
+  return NULL;
 }
 
 private char *
@@ -507,7 +545,7 @@ __append_wp_search_urls(ARRAY urls, int *id)
   if (my.wp_search == NULL) return;
 
   if (strlen(my.wp_terms) > 0) {
-    __load_lines(&terms, my.wp_terms);
+    __load_lines(&terms, my.wp_terms, 0);
     for (i = 0; i < terms.index; i++) {
       char *url = __build_wp_search_url(my.wp_search, terms.line[i]);
       __append_url(urls, url, id);
@@ -636,8 +674,15 @@ main(int argc, char *argv[])
   __config_setup(argc, argv);
   lines = __urls_setup();
   srand((unsigned int)time(NULL));
+  if (my.uadefault == TRUE && strlen(my.uafile) == 0) {
+    char *default_uafile = __default_user_agents_file();
+    if (default_uafile == NULL) {
+      NOTIFY(FATAL, "unable to find bundled useragents.txt; set SIEGE_USER_AGENTS_FILE or use --user-agent-file");
+    }
+    xstrncpy(my.uafile, default_uafile, sizeof(my.uafile));
+  }
   if (strlen(my.uafile) > 0) {
-    __load_lines(&my.uagents, my.uafile);
+    __load_lines(&my.uagents, my.uafile, my.ualimit);
     if (my.uagents.index < 1) {
       NOTIFY(FATAL, "user-agent file contains no usable entries: %s", my.uafile);
     }

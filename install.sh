@@ -147,6 +147,18 @@ install_siege() {
   else
     run_as_root make install
   fi
+
+  log "Installing bundled User-Agent list"
+  mkdir -p "$HOME/.siege"
+  cp data/useragents.txt "$HOME/.siege/useragents.txt"
+
+  if [ -w "$PREFIX" ] || { [ ! -e "$PREFIX/share/siege" ] && [ -w "$PREFIX/share" ]; }; then
+    mkdir -p "$PREFIX/share/siege"
+    cp data/useragents.txt "$PREFIX/share/siege/useragents.txt"
+  else
+    run_as_root mkdir -p "$PREFIX/share/siege"
+    run_as_root cp data/useragents.txt "$PREFIX/share/siege/useragents.txt"
+  fi
 }
 
 while [ "$#" -gt 0 ]; do
