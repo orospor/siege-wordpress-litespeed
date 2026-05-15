@@ -440,6 +440,41 @@ benchmark = false
 # user-agent =
 
 #
+# User-agent file: one User-Agent string per line. When set, Siege can rotate
+# User-Agent headers per request. user-agent-mode may be fixed, round-robin,
+# or random. If a file is configured without a mode, round-robin is used.
+#
+# ex: user-agent-file = /Users/gurujee/Documents/backups/useragents.txt
+# ex: user-agent-mode = random
+#
+# user-agent-file =
+# user-agent-mode = fixed
+
+#
+# WordPress / LiteSpeed regression helpers. wp-search generates requests
+# against the WordPress search endpoint: URL?s=<term>. wp-search-terms points
+# at a one-term-per-line file. wp-litespeed-owasp adds a small built-in set of
+# common OWASP firewall probe terms for regression testing.
+#
+# ex: wp-search = https://example.com/
+# ex: wp-search-terms = search-terms.txt
+# ex: wp-litespeed-owasp = true
+#
+# wp-search =
+# wp-search-terms =
+# wp-litespeed-owasp = false
+
+#
+# Nocache variants: when greater than zero, each loaded or generated URL is
+# expanded into numbered cache-bypass requests. For example, nocache = 3 turns
+# https://example.com/ into https://example.com/?nocache=1, ?nocache=2, and
+# ?nocache=3. Existing query strings use &nocache=N.
+#
+# ex: nocache = 100
+#
+# nocache = 0
+
+#
 # Accept-encoding. This option allows you to report to the server the 
 # various content-encodings you support. If you're not using HTML parser
 # (parser = false), then you can specify any encoding. When the parser is

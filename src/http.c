@@ -48,6 +48,27 @@ pthread_cond_t  __cond  = PTHREAD_COND_INITIALIZER;
 
 private int     __gzip_inflate(int window, const char *src, int srcLen, const char *dst, int dstLen);
 
+private const char *
+__user_agent()
+{
+  const char *agent = my.uagent;
+
+  if (my.uagents.index < 1 || my.uamode == UA_FIXED) {
+    return agent;
+  }
+
+  pthread_mutex_lock(&my.lock);
+  if (my.uamode == UA_RANDOM) {
+    agent = my.uagents.line[rand() % my.uagents.index];
+  } else {
+    agent = my.uagents.line[my.uaindex % my.uagents.index];
+    my.uaindex++;
+  }
+  pthread_mutex_unlock(&my.lock);
+
+  return agent;
+}
+
 /**
  * HTTPS tunnel; set up a secure tunnel with the
  * proxy server. CONNECT server:port HTTP/1.0
@@ -124,6 +145,7 @@ http_get(CONN *C, URL U, FACTS facts)
   char   cookie[MAX_COOKIE_SIZE+8];
   char * ifnon = NULL;
   char * ifmod = NULL; 
+  const char *uagent = __user_agent();
 
   memset(hoststr, '\0', sizeof hoststr);
   memset(cookie,  '\0', sizeof cookie);
@@ -209,7 +231,7 @@ http_get(CONN *C, URL U, FACTS facts)
          strlen((ifnon!=NULL)?ifnon:"") +
          strlen((strncasecmp(my.extra, "Accept:", 7)==0) ? "" : accept) +
          sizeof(encoding) +
-         strlen(my.uagent) +
+         strlen(uagent) +
          strlen(my.extra) +
          strlen(keepalive) +
          128; 
@@ -244,7 +266,7 @@ http_get(CONN *C, URL U, FACTS facts)
     (ifmod!=NULL)?ifmod:"",
     (ifnon!=NULL)?ifnon:"",
     (strncasecmp(my.extra, "Accept:", 7)==0) ? "" : accept,
-    encoding, my.uagent, my.extra, keepalive 
+    encoding, uagent, my.extra, keepalive
   );
 
   /**
@@ -285,6 +307,7 @@ http_post(CONN *C, URL U, FACTS facts)
   char   keepalive[16];
   char   cookie[MAX_COOKIE_SIZE];
   char   fullpath[MAX_COOKIE_SIZE*2];
+  const char *uagent = __user_agent();
 
   memset(hoststr,  '\0', sizeof(hoststr));
   memset(cookie,   '\0', MAX_COOKIE_SIZE);
@@ -367,7 +390,7 @@ http_post(CONN *C, URL U, FACTS facts)
          strlen(cookie) +
          strlen((strncasecmp(my.extra, "Accept:", 7)==0) ? "" : accept) +
          sizeof(encoding) +
-         strlen(my.uagent) +
+         strlen(uagent) +
          strlen(url_get_conttype(U)) +
          strlen(my.extra) +
          strlen(keepalive) + 
@@ -402,7 +425,7 @@ http_post(CONN *C, URL U, FACTS facts)
     (C->auth.proxy==TRUE)?authpxy:"",
     (strlen(cookie) > 8)?cookie:"", 
     (strncasecmp(my.extra, "Accept:", 7)==0) ? "" : accept,
-    encoding, my.uagent, my.extra, keepalive, url_get_conttype(U), (long)url_get_postlen(U)
+    encoding, uagent, my.extra, keepalive, url_get_conttype(U), (long)url_get_postlen(U)
   );
 
   if (rlen < mlen) {
@@ -724,4 +747,3 @@ __gzip_inflate(int window, const char *src, int srcLen, const char *dst, int dst
   return ret;
 #endif/*HAVE_ZLIB*/
 }
-

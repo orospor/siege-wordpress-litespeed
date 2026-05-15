@@ -124,6 +124,12 @@ init_config(void)
   my.unique         = TRUE;
   my.json_output    = FALSE;
   my.extra[0]       = 0;
+  my.uafile[0]      = 0;
+  my.uagents.index  = 0;
+  my.uagents.line   = NULL;
+  my.uamode         = UA_FIXED;
+  my.uamode_set     = FALSE;
+  my.uaindex        = 0;
   my.follow         = TRUE;
   my.zero_ok        = TRUE; 
   my.signaled       = 0;
@@ -131,6 +137,10 @@ init_config(void)
   my.ssl_cert       = NULL;
   my.ssl_key        = NULL;
   my.ssl_ciphers    = NULL; 
+  my.wp_search      = NULL;
+  my.wp_terms[0]    = 0;
+  my.wp_litespeed   = FALSE;
+  my.nocache        = 0;
   my.lurl           = new_array();
   my.aurl           = new_array();
   my.nomap          = xcalloc(1, sizeof(LINES));
@@ -225,6 +235,8 @@ show_config(int EXIT)
   printf("socket timeout:                 %d\n", my.timeout);
   printf("cache enabled:                  %s\n", my.cache==TRUE ? "true" : "false");
   printf("accept-encoding:                %s\n", my.encoding);
+  printf("user-agent file:                %s\n", strlen(my.uafile) > 0 ? my.uafile : "none");
+  printf("user-agent rotation:            %s\n", my.uamode == UA_RANDOM ? "random" : (my.uamode == UA_ROUND_ROBIN ? "round-robin" : "fixed"));
   printf("delay:                          %.3f sec%s\n", my.delay, (my.delay > 1) ? "s" : "");
   printf("internet simulation:            %s\n", my.internet?"true":"false");
   printf("benchmark mode:                 %s\n", my.bench?"true":"false");
@@ -242,6 +254,10 @@ show_config(int EXIT)
   printf("allow chunked encoding:         %s\n", my.chunked?"true":"false"); 
   printf("upload unique files:            %s\n", my.unique?"true":"false"); 
   printf("json output:                    %s\n", my.json_output?"true":"false");
+  printf("WordPress search base:          %s\n", my.wp_search == NULL ? "none" : my.wp_search);
+  printf("WordPress search terms file:    %s\n", strlen(my.wp_terms) > 0 ? my.wp_terms : "none");
+  printf("LiteSpeed OWASP probes:         %s\n", my.wp_litespeed ? "true" : "false");
+  printf("nocache variants:               %d\n", my.nocache);
   if (my.parser == TRUE && my.nomap->index > 0) {
     int i;
     printf("no-follow:\n"); 
@@ -520,6 +536,36 @@ load_conf(char *filename)
     else if (strmatch(option, "user-agent")) {
       xstrncpy(my.uagent, value, sizeof(my.uagent));
     }
+    else if (strmatch(option, "user-agent-file")) {
+      xstrncpy(my.uafile, value, sizeof(my.uafile));
+      my.uamode = UA_ROUND_ROBIN;
+    }
+    else if (strmatch(option, "user-agent-mode")) {
+      my.uamode_set = TRUE;
+      if (strmatch(value, "random")) {
+        my.uamode = UA_RANDOM;
+      } else if (strmatch(value, "round-robin")) {
+        my.uamode = UA_ROUND_ROBIN;
+      } else {
+        my.uamode = UA_FIXED;
+      }
+    }
+    else if (strmatch(option, "wp-search")) {
+      my.wp_search = stralloc(value);
+    }
+    else if (strmatch(option, "wp-search-terms")) {
+      xstrncpy(my.wp_terms, value, sizeof(my.wp_terms));
+    }
+    else if (strmatch(option, "wp-litespeed-owasp")) {
+      if (!strncasecmp(value, "true", 4))
+        my.wp_litespeed = TRUE;
+      else
+        my.wp_litespeed = FALSE;
+    }
+    else if (strmatch(option, "nocache")) {
+      my.nocache = atoi(value);
+      if (my.nocache < 0) my.nocache = 0;
+    }
     else if (strmatch(option, "accept-encoding")) {
       BOOLEAN compress = FALSE;
       if ((strstr(value, "gzip") != NULL)||(strstr(value, "compress") != NULL)) {
@@ -707,4 +753,3 @@ ds_module_check(void)
     my.debug   = FALSE; // why would you set quiet and debug?????
   }
 }
-

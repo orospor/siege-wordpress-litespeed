@@ -108,6 +108,52 @@ An html manual is included with this distribution:   manual.html
 
 Complete documentation for siege can be found at www.joedog.org
 
+WORDPRESS / LITESPEED TESTING EXTENSIONS
+----------------------------------------
+This fork adds focused options for testing WordPress sites protected by
+LiteSpeed OWASP firewall rules and user blocking controls.
+
+Rotate user agents from a one-per-line file:
+
+  siege --user-agent-file=/Users/gurujee/Documents/backups/useragents.txt \
+        --user-agent-mode=random https://example.com/
+
+Supported user-agent modes are fixed, round-robin, and random. The existing
+-A/--user-agent option still works for a single fixed User-Agent.
+
+Generate WordPress search requests with /?s=<term>:
+
+  siege --wp-search=https://example.com/ \
+        --wp-search-terms=search-terms.txt
+
+Add a small LiteSpeed/OWASP regression probe set to the generated search
+requests:
+
+  siege --wp-search=https://example.com/ \
+        --wp-search-terms=search-terms.txt \
+        --wp-litespeed-owasp \
+        --user-agent-file=/Users/gurujee/Documents/backups/useragents.txt \
+        --user-agent-mode=round-robin
+
+Generate numbered cache-bypass variants for each request target:
+
+  siege --nocache=3 https://example.com/
+
+This expands the target into:
+
+  https://example.com/?nocache=1
+  https://example.com/?nocache=2
+  https://example.com/?nocache=3
+
+If a URL already has a query string, the option appends &nocache=N instead.
+It also works with URL files and the WordPress search/LiteSpeed probe options.
+
+Useful additional regression cases to add as URL or term files:
+normal anonymous browsing, logged-out wp-login.php GET pressure, REST API
+discovery endpoints, XML-RPC access policy checks, static asset pressure,
+cache-hit versus cache-bypass URLs, common 404 probes, rate-limit threshold
+tests, and block-duration retests after the firewall has taken action.
+
 
 LICENSE
 -------

@@ -49,6 +49,7 @@
 #include <memory.h>
 #include <notify.h>
 #include <sys/resource.h>
+#include <time.h>
 #ifdef __CYGWIN__
 # include <getopt.h>
 #else
@@ -82,8 +83,14 @@ static struct option long_options[] =
   { "mark",         required_argument, NULL, 'm' },
   { "header",       required_argument, NULL, 'H' },
   { "user-agent",   required_argument, NULL, 'A' },
+  { "user-agent-file", required_argument, NULL, 1000 },
+  { "user-agent-mode", required_argument, NULL, 1001 },
   { "content-type", required_argument, NULL, 'T' },
   { "json-output",  no_argument,       NULL, 'j' },
+  { "wp-search",    required_argument, NULL, 1002 },
+  { "wp-search-terms", required_argument, NULL, 1003 },
+  { "wp-litespeed-owasp", no_argument, NULL, 1004 },
+  { "nocache",      required_argument, NULL, 1005 },
   {0, 0, 0, 0}
 };
 
@@ -156,8 +163,14 @@ display_help()
   puts("                            between .001 and NUM. (NOT COUNTED IN STATS)");
   puts("  -H, --header=\"text\"       Add a header to request (can be many)" ); 
   puts("  -A, --user-agent=\"text\"   Sets User-Agent in request" ); 
+  puts("      --user-agent-file=FILE Rotate User-Agent strings from FILE" );
+  puts("      --user-agent-mode=MODE fixed, round-robin, or random" );
   puts("  -T, --content-type=\"text\" Sets Content-Type in request" ); 
   puts("  -j, --json-output         JSON OUTPUT, print final stats to stdout as JSON");
+  puts("      --wp-search=URL       Generate WordPress ?s= search probes for URL");
+  puts("      --wp-search-terms=FILE Read WordPress search probe terms from FILE");
+  puts("      --wp-litespeed-owasp  Add LiteSpeed/OWASP regression search probes");
+  puts("      --nocache=NUM         Generate numbered nocache URL variants");
   puts("      --no-parser           NO PARSER, turn off the HTML page parser");
   puts("      --no-follow           NO FOLLOW, do not follow HTTP redirects");
   puts("");
@@ -276,6 +289,22 @@ parse_cmdline(int argc, char *argv[])
       case 'A':
         strncpy(my.uagent, optarg, 255);
         break;
+      case 1000:
+        xstrncpy(my.uafile, optarg, sizeof(my.uafile));
+        my.uamode = UA_ROUND_ROBIN;
+        break;
+      case 1001:
+        my.uamode_set = TRUE;
+        if (strmatch(optarg, "random")) {
+          my.uamode = UA_RANDOM;
+        } else if (strmatch(optarg, "round-robin")) {
+          my.uamode = UA_ROUND_ROBIN;
+        } else if (strmatch(optarg, "fixed")) {
+          my.uamode = UA_FIXED;
+        } else {
+          NOTIFY(FATAL, "unknown user-agent mode: %s", optarg);
+        }
+        break;
       case 'T':
         strncpy(my.conttype, optarg, 255);
         break;
@@ -302,6 +331,19 @@ parse_cmdline(int argc, char *argv[])
       case 'j':
         my.json_output = TRUE;
         break;
+      case 1002:
+        my.wp_search = xstrdup(optarg);
+        break;
+      case 1003:
+        xstrncpy(my.wp_terms, optarg, sizeof(my.wp_terms));
+        break;
+      case 1004:
+        my.wp_litespeed = TRUE;
+        break;
+      case 1005:
+        my.nocache = atoi(optarg);
+        if (my.nocache < 0) my.nocache = 0;
+        break;
 
     } /* end of switch( c )           */
   }   /* end of while c = getopt_long */
@@ -327,6 +369,165 @@ __signal_setup()
   sigaddset(&sigs, SIGTERM);
   sigaddset(&sigs, SIGPIPE);
   sigprocmask(SIG_BLOCK, &sigs, NULL);
+}
+
+private int
+__load_lines(LINES *lines, const char *filename)
+{
+  FILE *fp;
+  char  buf[8192];
+
+  lines->index = 0;
+  lines->line  = NULL;
+
+  fp = fopen(filename, "r");
+  if (fp == NULL) {
+    NOTIFY(FATAL, "unable to open file: %s", filename);
+  }
+
+  while (fgets(buf, sizeof(buf), fp) != NULL) {
+    char *p = strchr(buf, '\n');
+    if (p != NULL) *p = '\0';
+    p = strchr(buf, '\r');
+    if (p != NULL) *p = '\0';
+    if (strlen(buf) == 0 || buf[0] == '#') continue;
+
+    lines->line = (char**)realloc(lines->line, sizeof(char *) * (lines->index + 1));
+    if (lines->line == NULL) {
+      fclose(fp);
+      NOTIFY(FATAL, "unable to allocate memory for lines from: %s", filename);
+    }
+    lines->line[lines->index] = xstrdup(buf);
+    lines->index++;
+  }
+  fclose(fp);
+  return lines->index;
+}
+
+private char *
+__url_encode_query(const char *src)
+{
+  const char hex[] = "0123456789ABCDEF";
+  size_t i, j = 0;
+  size_t len = strlen(src);
+  char *out = xmalloc((len * 3) + 1);
+
+  for (i = 0; i < len; i++) {
+    unsigned char c = (unsigned char)src[i];
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out[j++] = c;
+    } else if (c == ' ') {
+      out[j++] = '+';
+    } else {
+      out[j++] = '%';
+      out[j++] = hex[c >> 4];
+      out[j++] = hex[c & 15];
+    }
+  }
+  out[j] = '\0';
+  return out;
+}
+
+private char *
+__build_wp_search_url(const char *base, const char *term)
+{
+  char *encoded = __url_encode_query(term);
+  const char *sep = strchr(base, '?') == NULL ? "?s=" : "&s=";
+  size_t len = strlen(base) + strlen(sep) + strlen(encoded) + 1;
+  char *url = xmalloc(len);
+
+  snprintf(url, len, "%s%s%s", base, sep, encoded);
+  xfree(encoded);
+  return url;
+}
+
+private char *
+__build_nocache_url(const char *base, int value)
+{
+  const char *sep = strchr(base, '?') == NULL ? "?nocache=" : "&nocache=";
+  size_t len = strlen(base) + strlen(sep) + 32;
+  char *url = xmalloc(len);
+
+  snprintf(url, len, "%s%s%d", base, sep, value);
+  return url;
+}
+
+private void
+__append_url(ARRAY urls, const char *line, int *id)
+{
+  URL tmp = new_url((char*)line);
+  if (tmp != NULL) {
+    url_set_ID(tmp, *id);
+    array_npush(urls, tmp, URLSIZE);
+    (*id)++;
+  }
+}
+
+private ARRAY
+__expand_nocache_urls(ARRAY urls)
+{
+  int i, n, id = 0;
+  ARRAY expanded = new_array();
+
+  if (my.nocache < 1) return urls;
+
+  for (i = 0; i < (int)array_length(urls); i++) {
+    URL source = array_get(urls, i);
+    if (source == NULL) continue;
+
+    for (n = 1; n <= my.nocache; n++) {
+      char *url = __build_nocache_url(url_get_absolute(source), n);
+      __append_url(expanded, url, &id);
+      xfree(url);
+    }
+  }
+
+  urls = array_destroyer(urls, (void*)url_destroy);
+  return expanded;
+}
+
+private void
+__append_wp_search_urls(ARRAY urls, int *id)
+{
+  int i;
+  LINES terms;
+  static const char *owasp_terms[] = {
+    "wordpress",
+    "' OR '1'='1",
+    "<script>alert(1)</script>",
+    "../wp-config.php",
+    "../../etc/passwd",
+    "wp-json/wp/v2/users",
+    "union select null,user_pass from wp_users",
+    "${jndi:ldap://127.0.0.1/a}",
+    "admin'--",
+    NULL
+  };
+
+  if (my.wp_search == NULL) return;
+
+  if (strlen(my.wp_terms) > 0) {
+    __load_lines(&terms, my.wp_terms);
+    for (i = 0; i < terms.index; i++) {
+      char *url = __build_wp_search_url(my.wp_search, terms.line[i]);
+      __append_url(urls, url, id);
+      xfree(url);
+      xfree(terms.line[i]);
+    }
+    xfree(terms.line);
+  } else if (my.wp_litespeed == FALSE) {
+    char *url = __build_wp_search_url(my.wp_search, "wordpress");
+    __append_url(urls, url, id);
+    xfree(url);
+  }
+
+  if (my.wp_litespeed == TRUE) {
+    for (i = 0; owasp_terms[i] != NULL; i++) {
+      char *url = __build_wp_search_url(my.wp_search, owasp_terms[i]);
+      __append_url(urls, url, id);
+      xfree(url);
+    }
+  }
 }
 
 private void
@@ -373,11 +574,13 @@ __urls_setup()
 
   if (my.url != NULL) {
     my.length = 1; 
+  } else if (my.wp_search != NULL) {
+    my.length = 0;
   } else { 
     my.length = read_cfg_file(lines, my.file); 
   }
 
-  if (my.length == 0) { 
+  if (my.length == 0 && my.wp_search == NULL) {
     display_help();
   }
 
@@ -432,6 +635,16 @@ main(int argc, char *argv[])
   __signal_setup();
   __config_setup(argc, argv);
   lines = __urls_setup();
+  srand((unsigned int)time(NULL));
+  if (strlen(my.uafile) > 0) {
+    __load_lines(&my.uagents, my.uafile);
+    if (my.uagents.index < 1) {
+      NOTIFY(FATAL, "user-agent file contains no usable entries: %s", my.uafile);
+    }
+    if (my.uamode_set == FALSE) {
+      my.uamode = UA_ROUND_ROBIN;
+    }
+  }
 
   pthread_attr_init(&scope_attr);
   pthread_attr_setscope(&scope_attr, PTHREAD_SCOPE_SYSTEM);
@@ -447,6 +660,7 @@ main(int argc, char *argv[])
   SSL_thread_setup();
 #endif
 
+  i = 0;
   if (my.url != NULL) {
     URL tmp = new_url(my.url);
     url_set_ID(tmp, 0);
@@ -454,6 +668,7 @@ main(int argc, char *argv[])
       url_set_method(tmp, my.method); 
     }
     array_npush(urls, tmp, URLSIZE); // from cmd line
+    i = 1;
   } else { 
     for (i = 0; i < my.length; i++) {
       URL tmp = new_url(lines->line[i]);
@@ -465,6 +680,12 @@ main(int argc, char *argv[])
       array_npush(urls, tmp, URLSIZE);
     }
   } 
+  __append_wp_search_urls(urls, &i);
+  urls = __expand_nocache_urls(urls);
+  my.length = array_length(urls);
+  if (my.length == 0) {
+    NOTIFY(FATAL, "no usable URLs were generated or loaded");
+  }
 
   for (i = 0; i < my.cusers; i++) {
     BROWSER B = new_browser(i+1, file);
@@ -656,6 +877,10 @@ main(int argc, char *argv[])
     xfree(lines->line);
     xfree(lines);
   }
+  for (i = 0; i < my.uagents.index; i++) {
+    xfree(my.uagents.line[i]);
+  }
+  xfree(my.uagents.line);
 
   exit(EXIT_SUCCESS);  
 } /* end of int main **/

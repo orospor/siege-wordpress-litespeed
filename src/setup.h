@@ -134,6 +134,12 @@ typedef struct {
   char **line;
 } LINES;
 
+typedef enum {
+  UA_FIXED = 0,
+  UA_ROUND_ROBIN,
+  UA_RANDOM
+} UAMODE;
+
 void display_help();
 void display_version(BOOLEAN b);
 
@@ -180,6 +186,11 @@ struct CONFIG
   int     protocol;      /* 0=HTTP/1.0; 1=HTTP/1.1                  */
   //COOKIES cookies;       /* cookies    */
   char uagent[256];      /* user defined User-Agent string.         */
+  char uafile[255];      /* file with User-Agent strings.           */
+  LINES uagents;         /* loaded User-Agent strings.              */
+  UAMODE uamode;         /* user-agent selection strategy.          */
+  BOOLEAN uamode_set;    /* boolean, user explicitly set mode.      */
+  unsigned int uaindex;  /* global user-agent rotation index.       */
   char encoding[256];    /* user defined Accept-Encoding string.    */
   char conttype[256];    /* user defined default content type.      */
   int  bids;             /* W & P authorization bids before failure */
@@ -214,6 +225,10 @@ struct CONFIG
   char    *ssl_ciphers;  /* SSL chiphers to use : delimited         */ 
   METHOD  method;        /* HTTP method for --get requests          */
   BOOLEAN json_output;   /* boolean, TRUE == print stats in json    */
+  char    *wp_search;    /* WordPress base URL for /?s= probes.     */
+  char    wp_terms[255]; /* file with WordPress search terms.       */
+  BOOLEAN wp_litespeed;  /* add LiteSpeed/OWASP regression probes.  */
+  int     nocache;       /* generate numbered nocache URL variants.  */
   pthread_cond_t  cond;
   pthread_mutex_t lock;
 };
