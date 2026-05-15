@@ -49,8 +49,7 @@ BOOLEAN   http_get (CONN *C, URL U, FACTS facts);
 BOOLEAN   http_post(CONN *C, URL U, FACTS facts);
 RESPONSE  http_read_headers(CONN *C, URL U, FACTS facts);
 ssize_t   http_read(CONN *C, RESPONSE R);
-BOOLEAN   https_tunnel_request(CONN *C, char *host, int port);
+BOOLEAN   https_tunnel_request(CONN *C, const char *host, int port);
 int       https_tunnel_response(CONN *C);
 
 #endif /* HTTP_H */
-

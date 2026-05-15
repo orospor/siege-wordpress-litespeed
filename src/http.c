@@ -74,7 +74,7 @@ __user_agent()
  * proxy server. CONNECT server:port HTTP/1.0
  */
 BOOLEAN
-https_tunnel_request(CONN *C, char *host, int port)
+https_tunnel_request(CONN *C, const char *host, int port)
 {
   size_t  rlen, n;
   char    request[256];
@@ -111,7 +111,11 @@ https_tunnel_response(CONN *C)
   while(TRUE){
     x = 0;
     memset( &line, '\0', sizeof( line ));
-    while ((n = read(C->sock, &c, 1)) == 1) {
+    while ((n = socket_read(C, &c, 1)) == 1) {
+      if (x >= (int)sizeof(line) - 1) {
+        NOTIFY(ERROR, "HTTP: proxy tunnel response line too long");
+        return 502;
+      }
       line[x] = c;
       echo ("%c", c);
       if((line[0] == '\n') || (line[1] == '\n')){
@@ -119,6 +123,10 @@ https_tunnel_response(CONN *C)
       }
       if( line[x] == '\n' ) break;
       x ++;
+    }
+    if (n <= 0) {
+      NOTIFY(ERROR, "HTTP: unable to read proxy tunnel response");
+      return 502;
     }
     line[x]=0;
     if( strncasecmp( line, "http", 4 ) == 0 ){

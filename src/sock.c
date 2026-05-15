@@ -98,6 +98,7 @@ new_socket(CONN *C, const char *hostparam, int portparam)
   char port_str[10];
   struct addrinfo hints;
   struct addrinfo *addr_res;
+  struct addrinfo *addr_head;
   struct addrinfo *r;
 #else
   struct sockaddr_in cli;
@@ -159,6 +160,7 @@ new_socket(CONN *C, const char *hostparam, int portparam)
       NOTIFY(ERROR, "%s: %s", gai_strerror(res), hn);
       return -1;
     }
+    addr_head = addr_res;
     s_addr = addr_res->ai_addr;
     addrlen = addr_res->ai_addrlen;
     domain = addr_res->ai_family;
@@ -223,6 +225,9 @@ new_socket(CONN *C, const char *hostparam, int portparam)
 
   /* create a socket, return -1 on failure */
   if (__socket_create(C, domain) < 0) {
+#if defined(HAVE_GETADDRINFO)
+    freeaddrinfo(addr_head);
+#endif
     return -1;
   }
 
@@ -239,13 +244,16 @@ new_socket(CONN *C, const char *hostparam, int portparam)
     * to connect to each result until successful
     */
   if (conn < 0 && errno != EINPROGRESS) {
-    addr_res = addr_res->ai_next;
-    for (r = addr_res; r; r = r->ai_next) {
+    for (r = addr_res->ai_next; r; r = r->ai_next) {
       /* close previously opened socket */
       socket_close(C);
+      s_addr = r->ai_addr;
+      addrlen = r->ai_addrlen;
+      domain = r->ai_family;
 
       /* create a socket, return -1 on failure */
       if (__socket_create(C, domain) < 0) {
+        freeaddrinfo(addr_head);
         return -1;
       }
 
@@ -266,12 +274,19 @@ new_socket(CONN *C, const char *hostparam, int portparam)
       case ENETUNREACH:   {NOTIFY(ERROR, "socket: %d network is unreachable.", pthread_self()); break;}
       case EISCONN:       {NOTIFY(ERROR, "socket: %d already connected.",      pthread_self()); break;}
       default:            {NOTIFY(ERROR, "socket: %d unknown network error.",  pthread_self()); break;}
-    } socket_close(C); return -1;
+    } socket_close(C);
+#if defined(HAVE_GETADDRINFO)
+    freeaddrinfo(addr_head);
+#endif
+    return -1;
   } else {
     if (__socket_check(C, READ) == FALSE) {
       pthread_testcancel();
       NOTIFY(WARNING, "socket: read check timed out(%d) %s:%d", my.timeout, __FILE__, __LINE__);
       socket_close(C);
+#if defined(HAVE_GETADDRINFO)
+      freeaddrinfo(addr_head);
+#endif
       return -1; 
     } else { 
       /**
@@ -281,6 +296,9 @@ new_socket(CONN *C, const char *hostparam, int portparam)
       if((res < 0)&&(errno != EISCONN)){
         NOTIFY(ERROR, "socket: unable to connect %s:%d", __FILE__, __LINE__);
         socket_close(C);
+#if defined(HAVE_GETADDRINFO)
+        freeaddrinfo(addr_head);
+#endif
         return -1; 
       }
       C->status = S_READING; 
@@ -289,10 +307,16 @@ new_socket(CONN *C, const char *hostparam, int portparam)
 
   if ((__socket_block(C->sock, TRUE)) < 0) {
     NOTIFY(ERROR, "socket: unable to set socket to non-blocking %s:%d", __FILE__, __LINE__);
+#if defined(HAVE_GETADDRINFO)
+    freeaddrinfo(addr_head);
+#endif
     return -1; 
   }
 
   C->connection.status = 1; 
+#if defined(HAVE_GETADDRINFO)
+  freeaddrinfo(addr_head);
+#endif
   return(C->sock);
 }
 
@@ -323,8 +347,9 @@ __socket_poll(CONN *C, SDSET mode)
   int timo = (my.timeout) ? my.timeout * 1000 : 15000;
   __socket_block(C->sock, FALSE);
 
-  C->pfd[0].fd     = C->sock + 1;
-  C->pfd[0].events |= POLLIN;
+  C->pfd[0].fd      = C->sock;
+  C->pfd[0].events  = POLLIN;
+  C->pfd[0].revents = 0;
 
   do {
     res = poll(C->pfd, 1, timo);
@@ -810,5 +835,3 @@ socket_close(CONN *C)
 
   return;
 } 
-
-

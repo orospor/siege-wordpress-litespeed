@@ -980,11 +980,15 @@ __init_connection(BROWSER this, URL U)
     if (auth_get_proxy_required(my.auth))
 #endif
     {
-      https_tunnel_request(this->conn, url_get_hostname(U), url_get_port(U));
-      https_tunnel_response(this->conn);
+      if (https_tunnel_request(this->conn, url_get_hostname(U), url_get_port(U)) == FALSE ||
+          https_tunnel_response(this->conn) >= 400) {
+        socket_close(this->conn);
+        return FALSE;
+      }
     }
     this->conn->encrypt = TRUE;
     if (SSL_initialize(this->conn, url_get_hostname(U))==FALSE) {
+      socket_close(this->conn);
       return FALSE;
     }
   }
