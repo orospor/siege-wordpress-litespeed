@@ -453,6 +453,17 @@ benchmark = false
 # user-agent-mode = fixed
 
 #
+# Auto-tune: when true, Siege inspects the current machine before a run and
+# adjusts risky high-load parameters to fit local CPU count, available memory,
+# open-file limits, and process/thread limits. This is useful on small VPS
+# systems where a command like -c5000 can exhaust resources before the test
+# becomes meaningful.
+#
+# ex: auto-tune = true
+#
+# auto-tune = false
+
+#
 # WordPress / LiteSpeed regression helpers. wp-search generates requests
 # against the WordPress search endpoint: URL?s=<term>. wp-search-terms points
 # at a one-term-per-line file. wp-litespeed-owasp adds a small built-in set of

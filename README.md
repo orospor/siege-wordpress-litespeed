@@ -138,6 +138,17 @@ Limit the bundled list to the first NUM entries:
 
   siege --usera-agents=500 https://example.com/
 
+Ask Siege to tune risky load parameters for the machine it is running on:
+
+  siege https://example.com/ --auto-tune -u -c5000 -r100
+
+`--auto-tune` inspects CPU count, available memory, open-file limits, and
+process/thread limits before the run starts. It then caps concurrency and
+large `--nocache` expansions to fit the current box. On a small 2 vCPU / 1 GB
+Ubuntu server, this prevents commands such as `-c5000 --nocache=1000` from
+trying to create far more threads and generated URLs than the machine can
+handle.
+
 Supported user-agent modes are fixed, round-robin, and random. The existing
 -A/--user-agent option still works for a single fixed User-Agent. The -u
 shortcut uses indefinite round-robin rotation over the bundled list. You can

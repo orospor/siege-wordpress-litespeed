@@ -93,6 +93,8 @@ static struct option long_options[] =
   { "wp-search-terms", required_argument, NULL, 1003 },
   { "wp-litespeed-owasp", no_argument, NULL, 1004 },
   { "nocache",      required_argument, NULL, 1005 },
+  { "auto-tune",    no_argument,       NULL, 1006 },
+  { "autotune",     no_argument,       NULL, 1006 },
   {0, 0, 0, 0}
 };
 
@@ -174,6 +176,7 @@ display_help()
   puts("      --wp-search-terms=FILE Read WordPress search probe terms from FILE");
   puts("      --wp-litespeed-owasp  Add LiteSpeed/OWASP regression search probes");
   puts("      --nocache=NUM         Generate numbered nocache URL variants");
+  puts("      --auto-tune           Optimize concurrency and generated URLs here");
   puts("      --no-parser           NO PARSER, turn off the HTML page parser");
   puts("      --no-follow           NO FOLLOW, do not follow HTTP redirects");
   puts("");
@@ -232,6 +235,7 @@ parse_cmdline(int argc, char *argv[])
         break;
       case 'c':
         my.cusers  = atoi(optarg);
+        my.cusers_set = TRUE;
         break;
       case 'i':
         my.internet = TRUE;
@@ -252,6 +256,7 @@ parse_cmdline(int argc, char *argv[])
       case 'p':
         my.print  = TRUE;
         my.cusers = 1;
+        my.cusers_set = TRUE;
         my.reps   = 1;
         break;
       case 'l':
@@ -353,6 +358,9 @@ parse_cmdline(int argc, char *argv[])
         my.nocache = atoi(optarg);
         if (my.nocache < 0) my.nocache = 0;
         break;
+      case 1006:
+        my.autotune = TRUE;
+        break;
 
     } /* end of switch( c )           */
   }   /* end of while c = getopt_long */
@@ -381,6 +389,164 @@ __signal_setup()
   sigaddset(&sigs, SIGTERM);
   sigaddset(&sigs, SIGPIPE);
   sigprocmask(SIG_BLOCK, &sigs, NULL);
+}
+
+private long
+__sysconf_or_zero(int name)
+{
+  long value = sysconf(name);
+  return value > 0 ? value : 0;
+}
+
+private long
+__online_cpus()
+{
+#ifdef _SC_NPROCESSORS_ONLN
+  long cpus = __sysconf_or_zero(_SC_NPROCESSORS_ONLN);
+  if (cpus > 0) return cpus;
+#endif
+  return 1;
+}
+
+private unsigned long long
+__available_memory_mb()
+{
+  long pages = 0;
+  long size  = 0;
+  FILE *fp;
+  char line[256];
+  unsigned long long kb;
+
+  fp = fopen("/proc/meminfo", "r");
+  if (fp != NULL) {
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) {
+        fclose(fp);
+        return kb / 1024ULL;
+      }
+    }
+    fclose(fp);
+  }
+
+#if defined(_SC_AVPHYS_PAGES) && defined(_SC_PAGESIZE)
+  pages = __sysconf_or_zero(_SC_AVPHYS_PAGES);
+  size  = __sysconf_or_zero(_SC_PAGESIZE);
+  if (pages > 0 && size > 0) {
+    return ((unsigned long long)pages * (unsigned long long)size) / (1024ULL * 1024ULL);
+  }
+#endif
+
+#if defined(_SC_PHYS_PAGES) && defined(_SC_PAGESIZE)
+  pages = __sysconf_or_zero(_SC_PHYS_PAGES);
+  size  = __sysconf_or_zero(_SC_PAGESIZE);
+  if (pages > 0 && size > 0) {
+    return ((unsigned long long)pages * (unsigned long long)size) / (1024ULL * 1024ULL);
+  }
+#endif
+
+  return 0;
+}
+
+private long
+__soft_limit(int resource)
+{
+  struct rlimit lim;
+
+  if (getrlimit(resource, &lim) != 0) return 0;
+  if (lim.rlim_cur == RLIM_INFINITY) return LONG_MAX;
+  if (lim.rlim_cur > (rlim_t)LONG_MAX) return LONG_MAX;
+  return (long)lim.rlim_cur;
+}
+
+private int
+__min_positive_int(int current, long candidate)
+{
+  if (candidate < 1) return current;
+  if (candidate > INT_MAX) candidate = INT_MAX;
+  return current < (int)candidate ? current : (int)candidate;
+}
+
+private void
+__auto_tune()
+{
+  long cpus;
+  long nofile;
+  long nproc;
+  int  original_cusers;
+  int  original_nocache;
+  int  max_cusers;
+  int  recommended_cusers;
+  int  nocache_cap;
+  unsigned long long memory_mb;
+
+  if (my.autotune == FALSE) return;
+
+  cpus              = __online_cpus();
+  memory_mb         = __available_memory_mb();
+  nofile            = 0;
+  nproc             = 0;
+  original_cusers   = my.cusers;
+  original_nocache  = my.nocache;
+  max_cusers        = my.limit > 0 ? my.limit : 255;
+
+#ifdef RLIMIT_NOFILE
+  nofile = __soft_limit(RLIMIT_NOFILE);
+#endif
+#ifdef RLIMIT_NPROC
+  nproc = __soft_limit(RLIMIT_NPROC);
+#endif
+
+  max_cusers = __min_positive_int(max_cusers, cpus * 100);
+
+  if (memory_mb > 0) {
+    unsigned long long usable = memory_mb > 256 ? memory_mb - 256 : memory_mb / 2;
+    max_cusers = __min_positive_int(max_cusers, (long)(usable / 4));
+  }
+  if (nofile > 128 && nofile != LONG_MAX) {
+    max_cusers = __min_positive_int(max_cusers, (nofile - 64) / 4);
+  }
+  if (nproc > 64 && nproc != LONG_MAX) {
+    max_cusers = __min_positive_int(max_cusers, (nproc - 16) / 2);
+  }
+  max_cusers = __min_positive_int(max_cusers, 2000);
+  if (max_cusers < 1) max_cusers = 1;
+
+  recommended_cusers = (int)(cpus * 50);
+  if (recommended_cusers < 10) recommended_cusers = 10;
+  if (recommended_cusers > max_cusers) recommended_cusers = max_cusers;
+
+  if (my.cusers > max_cusers) {
+    my.cusers = max_cusers;
+  } else if (my.cusers_set == FALSE && my.cusers < recommended_cusers) {
+    my.cusers = recommended_cusers;
+  }
+
+  if (memory_mb > 0 && memory_mb <= 1024) {
+    nocache_cap = 250;
+  } else if (memory_mb > 0 && memory_mb <= 2048) {
+    nocache_cap = 500;
+  } else if (memory_mb > 0 && memory_mb <= 4096) {
+    nocache_cap = 1000;
+  } else {
+    nocache_cap = 2500;
+  }
+
+  if (my.nocache > nocache_cap) {
+    my.nocache = nocache_cap;
+  }
+
+  if (!my.quiet) {
+    fprintf(stderr, "Auto-tune: cpus=%ld memory=%lluMB", cpus, memory_mb);
+    if (nofile > 0 && nofile != LONG_MAX) fprintf(stderr, " nofile=%ld", nofile);
+    if (nproc > 0 && nproc != LONG_MAX) fprintf(stderr, " nproc=%ld", nproc);
+    fprintf(stderr, " concurrent=%d", my.cusers);
+    if (original_cusers != my.cusers) fprintf(stderr, " (from %d)", original_cusers);
+    if (original_nocache > 0) {
+      fprintf(stderr, " nocache=%d", my.nocache);
+      if (original_nocache != my.nocache) fprintf(stderr, " (from %d)", original_nocache);
+    }
+    fprintf(stderr, "\n");
+  }
 }
 
 private int
@@ -583,6 +749,7 @@ __config_setup(int argc, char *argv[])
   } 
   parse_cmdline(argc, argv);
   ds_module_check(); 
+  __auto_tune();
   
   if (my.config) {
     show_config(TRUE);    

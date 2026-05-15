@@ -163,8 +163,10 @@ struct CONFIG
   BOOLEAN fullurl;       /* boolean, display full url in verbose    */
   BOOLEAN display;       /* boolean, display the thread id verbose  */
   BOOLEAN config;        /* boolean, prints the configuration       */
+  BOOLEAN autotune;      /* boolean, tune runtime params to machine */
   BOOLEAN color;         /* boolean, true for color, false for not  */
   int     cusers;        /* default concurrent users value.         */
+  BOOLEAN cusers_set;    /* boolean, command line set cusers.       */
   float   delay;         /* range for random time delay, see -d     */
   int     timeout;       /* socket connection timeout value, def:10 */
   BOOLEAN bench;         /* signifies a benchmarking run, no delay  */
